@@ -63,7 +63,7 @@ def click(x, y, pause=1.0):
     time.sleep(random.uniform(pause - (pause*0.2), pause + (pause*0.2)))
 
 def worth():
-    while find_icon_img(data["path_find"], data["find_icon"], ) is None:
+    while find_icon_img(data["path_find"], data["find_icon"]) is None:
         time.sleep(1)
 
 def point_on_line(x1, y1, x2, y2, t=0.5):
@@ -220,6 +220,16 @@ def attack(_method, run_time, walls):
             click(*data["return"], 0.1)
 
         time.sleep(random.uniform(4, 5))
+        while True:
+            counter = 1
+            g, e, _ = home_resources()
+            if g or e or _:
+                break
+            if counter > 5:
+                raise FileNotFoundError
+            time.sleep(2)
+            counter += 1
+
         click(1400, 2000, 0.5)
         if walls:
             g, e, _ = home_resources()
