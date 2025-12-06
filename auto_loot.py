@@ -147,16 +147,16 @@ def walls_helper(g, e):
     click(1206, 80, 0.2)
     walls = None
     for i in range(9):
-        points = find_all_icon_img(resource_path(data["path_wall"]), (800, 200, 400, 800), text=True, threshold=0.7)
+        points = find_all_icon_img(resource_path("templates/wall.png"), (800, 200, 400, 800), text=True, threshold=0.7)
         points.reverse()
         if points:
             flag = False
             for j in range(len(points)):
                 tx, ty, _ = points[j]
                 if g > e:
-                    ix, iy = find_icon_img(resource_path("templates/gold.png"), (tx + 200, ty - 30, 300, 60), threshold=0.7, screenshot=False)
+                    ix, iy = find_icon_img(resource_path("templates/gold.png"), (tx + 200, ty - 30, 500, 60), threshold=0.7, screenshot=False)
                 else:
-                    ix, iy = find_icon_img(resource_path("templates/elixir.png"), (tx + 200, ty - 30, 300, 60), threshold=0.7, screenshot=False)
+                    ix, iy = find_icon_img(resource_path("templates/elixir.png"), (tx + 200, ty - 30, 500, 60), threshold=0.7, screenshot=False)
                 bri = detect_brightest(ix + 15, iy - 20, ix + 100, iy + 10)
                 if bri > 600:
                     flag = True
@@ -173,16 +173,16 @@ def walls_helper(g, e):
             time.sleep(0.01)
         time.sleep(0.1)
         mouse_downup_inject(0, 1290, 300)
-        time.sleep(0.2)
+        time.sleep(0.5)
     if walls:
-        click(*tuple(map(int, walls)), 0.6)
+        click(*tuple(map(int, walls)), 1)
         points = find_all_icon_img(resource_path("templates/upgrade.png"), (1000, 1000, 1000, 500), text=False, threshold=0.7)
         points.sort()
         if g > e:
             click(*points[0][:2], 0.2)
         else:
             click(*points[1][:2], 0.2)
-        click(1838, 1406, 0.3)
+        click(1838, 1406, 2)
         return True
     else:
         return False
