@@ -1,5 +1,7 @@
 import os
 import sys
+from doctest import debug
+
 import cv2
 import numpy as np
 from pathlib import Path
@@ -33,15 +35,21 @@ def crop_screen(x1, y1, x2, y2, output_name="cropped_screen.png"):
     cv2.imwrite(str(SCREENS_DIR / output_name), cropped)
 
 def _preprocess(img_bgr, debug=None):
-    gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
-    _, th = cv2.threshold(gray, 240, 255, cv2.THRESH_BINARY)
+    thresh = 215  # tweak this: 210–235 depending on how strong you want it
+    # Split channels
+    b, g, r = cv2.split(img_bgr)
+
+    # Pixel is "white-ish" if all channels are high
+    mask = (b >= thresh) & (g >= thresh) & (r >= thresh)
+
+    # Convert boolean mask → 0 / 255 image
+    th = (mask.astype(np.uint8) * 255)
 
     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2,2))
     th = cv2.dilate(th, kernel, iterations=1)
 
     # Save debug
     if debug:
-        cv2.imwrite(f"{debug}_gray.png", gray)
         cv2.imwrite(f"{debug}_bin.png", th)
 
     return th
