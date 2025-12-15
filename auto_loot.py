@@ -262,7 +262,7 @@ def attack(_method, run_time, walls):
         click(*check_screen("okay.png"), 0.1)
         click(*check_screen("returnhome.png"), 0.1)
         home_screen_check()
-        upgrade_walls(walls)
+        upgrade_walls(walls) # rework needed
 
 def run_bot(method, run_time, walls):
     load_data()

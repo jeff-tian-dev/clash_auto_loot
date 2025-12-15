@@ -282,5 +282,4 @@ def find_all_icon_img(img, template_path, region=(0, 0, screenx, screeny), text=
 # print(detect_brightest(1393, 496, 1456, 530))
 # print(detect_brightest(1405, 422, 1465, 456))
 
-print(home_resources(screenshot()))
 
