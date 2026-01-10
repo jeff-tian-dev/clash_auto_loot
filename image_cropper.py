@@ -4,8 +4,6 @@ import time
 import cv2
 import pyautogui
 import numpy as np
-
-from click_injector import screenshot
 from pathlib import Path
 
 def resource_path(relative_path):
@@ -16,183 +14,10 @@ def resource_path(relative_path):
     return str(os.path.join(base_path, "templates/" + relative_path))
 
 APPDATA = Path(os.getenv("APPDATA")) / "AutoLootBot"
-
-BLOBS_DIR = APPDATA / "blobs_tmp"
-BLOBS_DIR.mkdir(parents=True, exist_ok=True)
-
 screenx, screeny = pyautogui.size()
 
 def crop_screen(img, x1, y1, x2, y2):
     return img[y1:y2, x1:x2]
-
-def _preprocess(img_bgr, debug=None):
-    thresh = 215  # tweak this: 210–235 depending on how strong you want it
-    # Split channels
-    b, g, r = cv2.split(img_bgr)
-
-    # Pixel is "white-ish" if all channels are high
-    mask = (b >= thresh) & (g >= thresh) & (r >= thresh)
-
-    # Convert boolean mask → 0 / 255 image
-    th = (mask.astype(np.uint8) * 255)
-
-    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2,2))
-    th = cv2.dilate(th, kernel, iterations=1)
-
-    # Save debug
-    if debug:
-        cv2.imwrite(f"{debug}_bin.png", th)
-
-    return th
-
-def find_digit_boxes(bin_img, out_dir="blobs"):
-    """Return bounding boxes (x, y, w, h) for each digit-like blob."""
-    out_dir = BLOBS_DIR  # ignore any custom string dirs
-
-    os.makedirs(out_dir, exist_ok=True)
-
-    # Find connected white components
-    n, _, stats, _ = cv2.connectedComponentsWithStats(bin_img, connectivity=8)
-    H, W = bin_img.shape
-
-    boxes = []
-
-    for i in range(1, n):  # skip background
-        x, y, w, h, area = stats[i]
-
-        # filter small noise
-        if w < 9 or h < 18:
-            continue
-
-        # filter huge accidental blobs
-        if h > int(H * 0.95) and w > int(W * 0.95):
-            continue
-
-        boxes.append((x, y, w, h))
-
-    # Sort boxes left → right
-    boxes.sort(key=lambda b: b[0])
-
-    blobs = []
-    for (x, y, w, h) in boxes:
-        blobs.append(bin_img[y:y + h, x:x + w])
-
-    return blobs, boxes
-
-THRESH_VAL = 200  # same idea as your _preprocess threshold
-
-def load_templates_binary(template_dir="templates"):
-    templates = {}
-
-    for d in range(10):
-        path = resource_path(f"{d}.png")
-        img = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
-        if img is None:
-            raise FileNotFoundError(f"Template missing: {path}")
-
-        # binarize to 0/1
-        bin01 = (img >= THRESH_VAL).astype(np.uint8)
-        templates[d] = bin01
-
-    return templates
-
-def classify_digit_by_templates(blob_img, templates, min_score=0.7):
-    """
-    blob_img: single digit cutout (0 or 255, white on black).
-    templates: dict {digit: 0/1 template array}.
-    Returns (best_digit or None, best_score).
-    """
-
-    # ensure 0/1
-    blob = blob_img.copy()
-    if blob.max() > 1:
-        blob = (blob >= THRESH_VAL).astype(np.uint8)
-
-    best_digit = None
-    best_score = -1.0
-
-    for digit, tmpl in templates.items():
-        th, tw = tmpl.shape
-
-        # resize blob to template size
-        resized = cv2.resize(blob, (tw, th), interpolation=cv2.INTER_NEAREST)
-        resized = (resized > 0).astype(np.uint8)
-
-        tmpl_fg = tmpl
-        ones_in_tmpl = int(tmpl_fg.sum())
-        if ones_in_tmpl == 0:
-            continue
-
-        # overlap where template expects 1s
-        overlap = int((resized & tmpl_fg).sum())
-        coverage = overlap / ones_in_tmpl  # how much of template is matched
-
-        # penalty: 1s in blob where template has 0
-        extra = int((resized & (1 - tmpl_fg)).sum())
-        extra_norm = extra / ones_in_tmpl
-
-        score = coverage - 0.3 * extra_norm  # tweak penalty weight if needed
-
-        if score > best_score:
-            best_score = score
-            best_digit = digit
-
-    if best_score < min_score:
-        return None, best_score
-    return best_digit, best_score
-
-def read_number_with_templates(img, templates, debug=False):
-    bin_img = _preprocess(img)
-
-    blobs, boxes = find_digit_boxes(bin_img)
-
-    digits = []
-    for blob, box in zip(blobs, boxes):
-        d, score = classify_digit_by_templates(blob, templates)
-        if debug:
-            print(f"  box {box} -> {d} (score={score:.3f})")
-        if d is not None:
-            digits.append(str(d))
-
-    return int("".join(digits)) if digits else None
-
-def read_all_resources(img, template_dir="templates", debug=False):
-    templates = load_templates_binary(template_dir)
-
-    g =  crop_screen(img, 115, 175, 350, 230)
-    e =  crop_screen(img,115, 250, 350, 300)
-    de = crop_screen(img,115, 320, 275, 370)
-
-    result = [
-        read_number_with_templates(g,  templates, debug=debug),
-        read_number_with_templates(e,  templates, debug=debug),
-        read_number_with_templates(de, templates, debug=debug),
-    ]
-    return result
-
-def home_resources(img, template_dir="templates", debug=False):
-    templates = load_templates_binary(template_dir)
-
-    g =  crop_screen(img,2150, 57, 2420, 101)
-    e =  crop_screen(img,2150, 183, 2420, 227)
-    de = crop_screen(img,2240, 303, 2420, 351)
-
-    result = [
-        read_number_with_templates(g,  templates, debug=debug),
-        read_number_with_templates(e,  templates, debug=debug),
-        read_number_with_templates(de, templates, debug=debug),
-    ]
-    return result
-
-def detect_brightest(img, x1, y1, x2, y2):
-    crop = img[y1:y2, x1:x2]
-
-    # Sum BGR values for each pixel → approximate brightness
-    brightness = crop.sum(axis=2)  # shape (h,w), values ~0–765
-
-    min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(brightness)
-
-    return int(max_val)
 
 def find_icon_img(img, template_path, region=(0, 0, int(screenx), int(screeny)), threshold=0.8):
     template = cv2.imread(resource_path(template_path))
@@ -225,23 +50,31 @@ def find_all_icon_img(img, template_path, region=(0, 0, screenx, screeny), text=
     x, y, w, h = region
     cropped = img[y:y + h, x:x + w]
     if text:
-        # Convert to grayscale
+        # 1. Convert to Grayscale
         cropped_gray = cv2.cvtColor(cropped, cv2.COLOR_BGR2GRAY)
         template_gray = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY)
 
-        # Threshold: pixels > 200 -> 255 (white), else 0 (black)
-        # 200 is your brightness cutoff – change this to tweak sensitivity.
-        _, cropped_bin = cv2.threshold(cropped_gray, 200, 255, cv2.THRESH_BINARY)
-        _, template_bin = cv2.threshold(template_gray, 200, 255, cv2.THRESH_BINARY)
+        # 2. Apply Top-Hat Transform
+        # This filter subtracts the local background, leaving only bright features (text)
+        # The kernel size (9,9) should be roughly the size of a single letter stroke thickness
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (9, 9))
 
-        # cv2.imwrite("debug_cropped_gray.png", cropped_gray)
-        # cv2.imwrite("debug_template_gray.png", template_gray)
-        # cv2.imwrite("debug_cropped_bin.png", cropped_bin)
-        # cv2.imwrite("debug_template_bin.png", template_bin)
+        cropped_processed = cv2.morphologyEx(cropped_gray, cv2.MORPH_TOPHAT, kernel)
+        template_processed = cv2.morphologyEx(template_gray, cv2.MORPH_TOPHAT, kernel)
 
-        # Template match on binarized images
-        result = cv2.matchTemplate(cropped_bin, template_bin, cv2.TM_SQDIFF_NORMED)
-        yloc, xloc = (1.0 - result >= threshold).nonzero()
+        # 3. (Optional) Small blur to smooth out JPEG artifacts
+        # This helps fuse the pixels back together so they aren't "grainy"
+        cropped_processed = cv2.GaussianBlur(cropped_processed, (3, 3), 0)
+        template_processed = cv2.GaussianBlur(template_processed, (3, 3), 0)
+
+        # Debug: Check these images! They should look like glowing text on black void.
+        cv2.imwrite("debug_cropped_tophat.png", cropped_processed)
+        cv2.imwrite("debug_template_tophat.png", template_processed)
+
+        # 4. Match
+        # We use CCOEFF_NORMED because we are now matching "intensity blobs"
+        result = cv2.matchTemplate(cropped_processed, template_processed, cv2.TM_CCOEFF_NORMED)
+        yloc, xloc = (result >= threshold).nonzero()
     else:
         # Normal template matching on color images
         result = cv2.matchTemplate(cropped, template, cv2.TM_CCOEFF_NORMED)
@@ -250,7 +83,7 @@ def find_all_icon_img(img, template_path, region=(0, 0, screenx, screeny), text=
     th, tw = template.shape[:2]
 
     points = []
-
+    min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
 
     for (px, py) in zip(xloc, yloc):
         cx = px + tw // 2
@@ -258,9 +91,6 @@ def find_all_icon_img(img, template_path, region=(0, 0, screenx, screeny), text=
 
         screen_x = x + cx
         screen_y = y + cy
-        conf = float(result[py, px])
-        if text:
-            conf = 1.0 - conf
 
         points.append((screen_x, screen_y))
 
@@ -272,6 +102,35 @@ def find_all_icon_img(img, template_path, region=(0, 0, screenx, screeny), text=
             filtered.append(pt)
 
     return filtered
+
+
+def exact_color_fraction(img, target_bgr=(112, 119, 224), tolerance=3, save=False):
+    if img is None:
+        raise ValueError("Could not load image")
+
+    # Convert target to int16 to prevent overflow/underflow (e.g. 0 - 10 wrapping to 246)
+    target = np.array(target_bgr, dtype=np.int16)
+
+    lower = np.clip(target - tolerance, 0, 255).astype(np.uint8)
+    upper = np.clip(target + tolerance, 0, 255).astype(np.uint8)
+
+    # Returns a mask where 255 is a match and 0 is not
+    mask = cv2.inRange(img, lower, upper)
+
+    if save:
+        debug_img = img.copy()
+        # Apply highlight where mask is white (255)
+        debug_img[mask > 0] = (255, 0, 255)
+        cv2.imwrite("debug.png", debug_img)
+
+    matched_pixels = cv2.countNonZero(mask)
+    total_pixels = img.shape[0] * img.shape[1]
+
+    if total_pixels == 0:
+        return 0.0
+
+    return matched_pixels / total_pixels
+
 
 # print(find_all_icon_img("templates/wall.png",(800, 200, 400, 800), text=True, threshold=0.70))
 

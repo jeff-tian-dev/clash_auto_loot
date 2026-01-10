@@ -29,6 +29,16 @@ GetWindowText = user32.GetWindowTextW
 GetWindowTextLength = user32.GetWindowTextLengthW
 IsWindowVisible = user32.IsWindowVisible
 
+WM_LBUTTONDOWN = 0x0201
+WM_LBUTTONUP   = 0x0202
+WM_MOUSEMOVE   = 0x0200
+MK_LBUTTON     = 0x0001
+WM_MOUSEWHEEL = 0x020A
+WHEEL_DELTA = 120
+WM_KEYDOWN = 0x0100
+WM_KEYUP   = 0x0101
+WM_CHAR    = 0x0102
+
 def get_hwnd_partial(name="Clash of Clans") -> int:
     result = {"hwnd": 0}
     def callback(hwnd, lParam):
@@ -48,27 +58,17 @@ def get_hwnd_partial(name="Clash of Clans") -> int:
     EnumWindows(EnumWindowsProc(callback), 0)
     return result["hwnd"]
 
-WM_LBUTTONDOWN = 0x0201
-WM_LBUTTONUP   = 0x0202
-WM_MOUSEMOVE   = 0x0200
-MK_LBUTTON     = 0x0001
-WM_MOUSEWHEEL = 0x020A
-WHEEL_DELTA = 120
-WM_KEYDOWN = 0x0100
-WM_KEYUP   = 0x0101
-WM_CHAR    = 0x0102
+FindWindow = user32.FindWindowW
+FindWindow.argtypes = (wintypes.LPCWSTR, wintypes.LPCWSTR)
+FindWindow.restype = wintypes.HWND
+
+hwnd = get_hwnd_partial(name="Clash of Clans")
 
 def move_injector(x, y):
     user32.SendMessageW(hwnd, WM_MOUSEMOVE, MK_LBUTTON, make_lparam(x, y))
 
 def make_lparam(x, y):
     return (y << 16) | (x & 0xFFFF)
-
-FindWindow = user32.FindWindowW
-FindWindow.argtypes = (wintypes.LPCWSTR, wintypes.LPCWSTR)
-FindWindow.restype = wintypes.HWND
-
-hwnd = get_hwnd_partial(name="Clash of Clans")
 
 def click_inject(x, y):
     lparam = make_lparam(int(x), int(y))

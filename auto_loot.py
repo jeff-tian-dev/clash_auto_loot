@@ -10,9 +10,8 @@ from multiprocessing import Process, freeze_support
 from image_cropper import (
     find_icon_img,
     find_all_icon_img,
-    home_resources,
-    detect_brightest,
-    resource_path
+    resource_path,
+    exact_color_fraction
 )
 from click_injector import (
     click_inject,
@@ -26,6 +25,7 @@ from click_injector import (
 bot_process = None
 
 CORNER_ORDER = ["left", "top", "right", "bottom"]
+RESOURCES = ["gold.png", "elixir.png"]
 data = {}
 
 def load_data():
@@ -60,17 +60,17 @@ def click(x, y, pause=1.0, rand=True):
         click_inject(x, y)
     time.sleep(random.uniform(pause - (pause*0.2), pause + (pause*0.2)))
 
-def check_screen(template, find_all=False, repeat=15, error=True, frame=None):
+def check_screen(template, find_all=False, repeat=15, error=True, frame=None, required=1, thresh=0.8):
     for i in range(repeat):
         time.sleep(0.5)
         if frame is None or i != 0:
             frame = screenshot()
         if find_all:
-            bxy = find_all_icon_img(frame, template)
-            if bxy:
+            bxy = find_all_icon_img(frame, template, threshold=thresh+0.05)
+            if len(bxy) >= required:
                 return bxy
         else:
-            bx, by = find_icon_img(frame, template)
+            bx, by = find_icon_img(frame, template, threshold=thresh)
             if (bx, by) != (None, None):
                 return bx, by
     if error:
@@ -83,9 +83,9 @@ def home_screen_check():
         a, b = check_screen("attack.png", repeat=1, error=False)
         if (a, b) != (None, None):
             flag = True
-        c, d = check_screen("okay.png", repeat=3, error=False)
+        c, d = check_screen("okay.png", repeat=1, error=False)
         if (c, d) != (None, None):
-            time.sleep(0.5)
+            time.sleep(0.3)
             click(c, d)
         if flag:
             return
@@ -182,23 +182,20 @@ def walls_scroll():
     mouse_downup_inject(0, 1290, 300)
     time.sleep(0.5)
 
-def walls_helper(g, e):
+def walls_helper(ind):
     click(1206, 80, 0.2)
     walls = None
     for i in range(9):
         frame = screenshot()
-        points = find_all_icon_img(frame, "wall.png", (800, 200, 400, 800), text=True, threshold=0.7)
+        points = find_all_icon_img(frame, "wall.png", (700, 200, 600, 800), text=True, threshold=0.85)
         points.reverse()
         if points:
             flag = False
             for j in range(len(points)):
                 tx, ty = points[j]
-                if g > e:
-                    ix, iy = find_icon_img(frame, "gold.png", (tx + 200, ty - 30, 500, 60), threshold=0.7)
-                else:
-                    ix, iy = find_icon_img(frame, "elixir.png", (tx + 200, ty - 30, 500, 60), threshold=0.7)
-                bri = detect_brightest(frame, ix + 15, iy - 20, ix + 100, iy + 10)
-                if bri > 600:
+                ix, iy = find_icon_img(frame, RESOURCES[ind], (tx + 200, ty - 30, 500, 60), threshold=0.7)
+                bri = exact_color_fraction(frame[iy - 20:iy + 10, ix + 15:ix + 100], target_bgr=(112, 119, 224))
+                if bri < 0.01:
                     flag = True
                     walls = (tx, ty)
                     break
@@ -208,12 +205,20 @@ def walls_helper(g, e):
 
     if walls:
         click(*tuple(map(int, walls)), 0.5)
-        points = sorted(check_screen("upgrade.png", find_all=True))
-        if g > e:
-            click(*points[0], 0.5)
-        else:
-            click(*points[1], 0.5)
-        click(*check_screen("confirm.png"), 2)
+        points = sorted(check_screen("upgrade.png", find_all=True, required=2, thresh=0.7))
+        click(*check_screen("upgrademore.png"), 0.5)
+        for i in range(15):
+            frame = screenshot()
+            gx, gy = points[0]
+            ex, ey = points[1]
+            bri_gold = exact_color_fraction(frame[gy - 100:gy - 70, gx - 75:gx + 75], target_bgr=(112, 119, 224))
+            bri_elix = exact_color_fraction(frame[ey - 100:ey - 70, ex - 75:ex + 75], target_bgr=(112, 119, 224))
+            if bri_gold > 0.01 and bri_elix > 0.01:
+                break
+            click(*check_screen("addwall.png"), 0.2)
+        click(*check_screen("removewall.png"), 0.3)
+        click(*points[ind], 0.5)
+        click(*check_screen("okay.png"), 2)
         return True
     else:
         return False
@@ -221,14 +226,15 @@ def walls_helper(g, e):
 def upgrade_walls(walls):
     if walls:
         frame = screenshot()
-        g, e, _ = home_resources(frame)
-        print(g, e)
-        if g > 15000000 or e > 15000000:
-            while walls_helper(g, e):
-                frame = screenshot()
-                g, e, _ = home_resources(frame)
-
-
+        g = exact_color_fraction(frame[57:99, 2064:2524], target_bgr=(11, 169, 203))
+        e = exact_color_fraction(frame[180:228, 2064:2524], target_bgr=(169, 34, 169))
+        if g > 0.18 or e > 0.18:
+            if g > e:
+                walls_helper(0)
+                walls_helper(1)
+            else:
+                walls_helper(1)
+                walls_helper(0)
 
 def attack_type(_method):
     if _method == 1:
@@ -262,7 +268,7 @@ def attack(_method, run_time, walls):
         click(*check_screen("okay.png"), 0.1)
         click(*check_screen("returnhome.png"), 0.1)
         home_screen_check()
-        upgrade_walls(walls) # rework needed
+        upgrade_walls(walls)
 
 def run_bot(method, run_time, walls):
     load_data()
