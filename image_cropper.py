@@ -5,6 +5,7 @@ import cv2
 import pyautogui
 import numpy as np
 from pathlib import Path
+from click_injector import screenshot
 
 def resource_path(relative_path):
     try:
@@ -30,6 +31,7 @@ def find_icon_img(img, template_path, region=(0, 0, int(screenx), int(screeny)),
     # Template match
     result = cv2.matchTemplate(cropped, template, cv2.TM_CCOEFF_NORMED)
     _, max_val, _, max_loc = cv2.minMaxLoc(result)
+    # print(max_val)
 
     # If match too weak → return None
     if max_val < threshold:
@@ -50,29 +52,18 @@ def find_all_icon_img(img, template_path, region=(0, 0, screenx, screeny), text=
     x, y, w, h = region
     cropped = img[y:y + h, x:x + w]
     if text:
-        # 1. Convert to Grayscale
         cropped_gray = cv2.cvtColor(cropped, cv2.COLOR_BGR2GRAY)
         template_gray = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY)
-
-        # 2. Apply Top-Hat Transform
-        # This filter subtracts the local background, leaving only bright features (text)
-        # The kernel size (9,9) should be roughly the size of a single letter stroke thickness
         kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (9, 9))
 
         cropped_processed = cv2.morphologyEx(cropped_gray, cv2.MORPH_TOPHAT, kernel)
         template_processed = cv2.morphologyEx(template_gray, cv2.MORPH_TOPHAT, kernel)
 
-        # 3. (Optional) Small blur to smooth out JPEG artifacts
-        # This helps fuse the pixels back together so they aren't "grainy"
         cropped_processed = cv2.GaussianBlur(cropped_processed, (3, 3), 0)
         template_processed = cv2.GaussianBlur(template_processed, (3, 3), 0)
+        # cv2.imwrite("debug_cropped_tophat.png", cropped_processed)
+        # cv2.imwrite("debug_template_tophat.png", template_processed)
 
-        # Debug: Check these images! They should look like glowing text on black void.
-        cv2.imwrite("debug_cropped_tophat.png", cropped_processed)
-        cv2.imwrite("debug_template_tophat.png", template_processed)
-
-        # 4. Match
-        # We use CCOEFF_NORMED because we are now matching "intensity blobs"
         result = cv2.matchTemplate(cropped_processed, template_processed, cv2.TM_CCOEFF_NORMED)
         yloc, xloc = (result >= threshold).nonzero()
     else:
@@ -84,6 +75,7 @@ def find_all_icon_img(img, template_path, region=(0, 0, screenx, screeny), text=
 
     points = []
     min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
+    # print(max_val)
 
     for (px, py) in zip(xloc, yloc):
         cx = px + tw // 2
@@ -121,15 +113,40 @@ def exact_color_fraction(img, target_bgr=(112, 119, 224), tolerance=3, save=Fals
         debug_img = img.copy()
         # Apply highlight where mask is white (255)
         debug_img[mask > 0] = (255, 0, 255)
-        cv2.imwrite("debug.png", debug_img)
+        if target_bgr == (11, 169, 203):
+            cv2.imwrite("golddd.png", debug_img)
+        else:
+            cv2.imwrite("elixirrr.png", debug_img)
 
     matched_pixels = cv2.countNonZero(mask)
     total_pixels = img.shape[0] * img.shape[1]
 
-    if total_pixels == 0:
+    if total_pixels < 5:
         return 0.0
 
     return matched_pixels / total_pixels
+
+def find_leftmost_pixel(img, target_bgr=(112, 119, 224), tolerance=3):
+    if img is None:
+        return None
+
+    target = np.array(target_bgr, dtype=np.int16)
+    lower = np.clip(target - tolerance, 0, 255).astype(np.uint8)
+    upper = np.clip(target + tolerance, 0, 255).astype(np.uint8)
+
+    mask = cv2.inRange(img, lower, upper)
+
+    # Get all matching coordinates (rows=y, cols=x)
+    ys, xs = np.nonzero(mask)
+
+    if len(xs) == 0:
+        return None, None
+
+    # Find the index of the smallest x value
+    min_idx = np.argmin(xs)
+
+    # Return (x, y)
+    return int(xs[min_idx]), int(ys[min_idx])
 
 
 # print(find_all_icon_img("templates/wall.png",(800, 200, 400, 800), text=True, threshold=0.70))
@@ -138,7 +155,12 @@ def exact_color_fraction(img, target_bgr=(112, 119, 224), tolerance=3, save=Fals
 
 # print(detect_by_saturation(1523, 792, 1628, 813))
 
-# print(detect_brightest(1393, 496, 1456, 530))
-# print(detect_brightest(1405, 422, 1465, 456))
+# print(find_all_icon_img(screenshot(), "wall.png", (700, 200, 600, 800), text=True, threshold=0.9))
 
+# print(find_icon_img(screenshot(), "addwall.png"))
+
+# frame = screenshot()
+
+# print(exact_color_fraction(frame[95:105, 2060:2420], target_bgr=(11, 169, 203), tolerance=0))
+# print(exact_color_fraction(frame[220:230, 2060:2420], target_bgr=(169, 34, 169), tolerance=0))
 

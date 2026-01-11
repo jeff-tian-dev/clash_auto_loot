@@ -11,7 +11,8 @@ from image_cropper import (
     find_icon_img,
     find_all_icon_img,
     resource_path,
-    exact_color_fraction
+    exact_color_fraction,
+    find_leftmost_pixel
 )
 from click_injector import (
     click_inject,
@@ -182,19 +183,25 @@ def walls_scroll():
     mouse_downup_inject(0, 1290, 300)
     time.sleep(0.5)
 
-def walls_helper(ind):
+def walls_helper():
+    ind = 0
     click(1206, 80, 0.2)
     walls = None
     for i in range(9):
         frame = screenshot()
-        points = find_all_icon_img(frame, "wall.png", (700, 200, 600, 800), text=True, threshold=0.85)
+        points = find_all_icon_img(frame, "wall.png", (700, 200, 600, 800), text=True, threshold=0.9)
         points.reverse()
         if points:
             flag = False
             for j in range(len(points)):
                 tx, ty = points[j]
-                ix, iy = find_icon_img(frame, RESOURCES[ind], (tx + 200, ty - 30, 500, 60), threshold=0.7)
-                bri = exact_color_fraction(frame[iy - 20:iy + 10, ix + 15:ix + 100], target_bgr=(112, 119, 224))
+                ix1, iy1 = find_icon_img(frame, "gold.png", (tx + 200, ty - 30, 500, 60), threshold=0.7)
+                ix2, iy2 = find_icon_img(frame, "elixir.png", (tx + 200, ty - 30, 500, 60), threshold=0.7)
+                if ix1:
+                    bri = exact_color_fraction(frame[iy1 - 20:iy1 + 10, ix1 + 15:ix1 + 100], target_bgr=(112, 119, 224))
+                else:
+                    ind = 1
+                    bri = exact_color_fraction(frame[iy2 - 20:iy2 + 10, ix2 + 15:ix2 + 100], target_bgr=(112, 119, 224))
                 if bri < 0.01:
                     flag = True
                     walls = (tx, ty)
@@ -215,7 +222,10 @@ def walls_helper(ind):
             bri_elix = exact_color_fraction(frame[ey - 100:ey - 70, ex - 75:ex + 75], target_bgr=(112, 119, 224))
             if bri_gold > 0.01 and bri_elix > 0.01:
                 break
-            click(*check_screen("addwall.png"), 0.2)
+            ix, iy = check_screen("addwall.png", error=False, thresh=0.9, repeat=1)
+            if (ix, iy) == (None, None):
+                break
+            click(ix, iy, 0.1)
         click(*check_screen("removewall.png"), 0.3)
         click(*points[ind], 0.5)
         click(*check_screen("okay.png"), 2)
@@ -226,15 +236,12 @@ def walls_helper(ind):
 def upgrade_walls(walls):
     if walls:
         frame = screenshot()
-        g = exact_color_fraction(frame[57:99, 2064:2524], target_bgr=(11, 169, 203))
-        e = exact_color_fraction(frame[180:228, 2064:2524], target_bgr=(169, 34, 169))
-        if g > 0.18 or e > 0.18:
-            if g > e:
-                walls_helper(0)
-                walls_helper(1)
-            else:
-                walls_helper(1)
-                walls_helper(0)
+        g = find_leftmost_pixel(frame[95:105, 2060:2420], target_bgr=(11, 169, 203), tolerance=0)[0]
+        e = find_leftmost_pixel(frame[170:235, 2060:2530], target_bgr=(169, 34, 169), tolerance=0)[0]
+        if g and e and (g < 120 or e < 120):
+            for i in range(2):
+                walls_helper()
+
 
 def attack_type(_method):
     if _method == 1:
@@ -252,6 +259,7 @@ def attack(_method, run_time, walls):
     start_time = time.time()
 
     while time.time() - start_time < run_time:
+        upgrade_walls(walls)
         click(*check_screen("attack.png"), 0.1)
         click(*check_screen("findmatch.png"), 0.1)
         click(*check_screen("attack2.png"), 0.1)
@@ -268,7 +276,6 @@ def attack(_method, run_time, walls):
         click(*check_screen("okay.png"), 0.1)
         click(*check_screen("returnhome.png"), 0.1)
         home_screen_check()
-        upgrade_walls(walls)
 
 def run_bot(method, run_time, walls):
     load_data()
